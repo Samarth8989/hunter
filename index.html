@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hunter Lookup</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif; background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); min-height: 100vh; color: #e2e8f0; }
+    ::placeholder { color: #64748b; }
+    select option { background: #1e293b; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useRef } = React;
+
+    // ✏️ PASTE YOUR HUNTER.IO API KEY HERE
+    const HUNTER_API_KEY = "YOUR_API_KEY_HERE";
+
+    const HUNTER_BASE = "https://api.hunter.io/v2";
+
+    const DECISION_TITLES = [
+      "ceo","cto","cfo","coo","cmo","cpo","cio","cro",
+      "founder","co-founder","cofounder",
+      "president","vice president","vp",
+      "director","head","chief","partner",
+      "managing","general manager","owner",
+      "svp","evp","avp",
+    ];
+
+    function isDecisionMaker(person) {
+      if (person.seniority === "executive" || person.seniority === "senior") return true;
+      if (!person.position) return false;
+      const lower = person.position.toLowerCase();
+      return DECISION_TITLES.some((t) => lower.includes(t));
+    }
+
+    function seniorityLabel(person) {
+      if (person.seniority === "executive") return "Executive";
+      if (person.seniority === "senior") return "Senior";
+      if (person.position) {
+        const lower = person.position.toLowerCase();
+        if (["ceo","cto","cfo","coo","cmo","founder","co-founder","president","owner"].some(t => lower.includes(t)))
+          return "C-Suite / Founder";
+        if (["vp","vice president","svp","evp","avp"].some(t => lower.includes(t)))
+          return "VP-Level";
+        if (["director","head"].some(t => lower.includes(t)))
+          return "Director-Level";
+      }
+      return "Senior";
+    }
+
+    function ConfBadge({ confidence }) {
+      if (!confidence) return null;
+      const c = Number(confidence);
+      const s = c >= 80 ? { bg: "rgba(16,185,129,0.15)", color: "#34d399", border: "rgba(16,185,129,0.3)" }
+              : c >= 50 ? { bg: "rgba(245,158,11,0.15)", color: "#fbbf24", border: "rgba(245,158,11,0.3)" }
+              : { bg: "rgba(239,68,68,0.15)", color: "#f87171", border: "rgba(239,68,68,0.3)" };
+      return (
+        <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>
+          {c}%
+        </span>
+      );
+    }
+
+    function SourceBadge({ type }) {
+      const c = type === "personal" ? { bg: "rgba(59,130,246,0.12)", color: "#93c5fd" } : { bg: "rgba(255,255,255,0.05)", color: "#94a3b8" };
+      return <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: c.bg, color: c.color }}>{type || "unknown"}</span>;
+    }
+
+    function DeptBadge({ dept }) {
+      if (!dept) return null;
+      const map = {
+        executive: { bg: "rgba(139,92,246,0.15)", color: "#c4b5fd" },
+        marketing: { bg: "rgba(236,72,153,0.15)", color: "#f9a8d4" },
+        sales: { bg: "rgba(249,115,22,0.15)", color: "#fdba74" },
+        engineering: { bg: "rgba(6,182,212,0.15)", color: "#67e8f9" },
+        finance: { bg: "rgba(34,197,94,0.15)", color: "#86efac" },
+        hr: { bg: "rgba(234,179,8,0.15)", color: "#fde047" },
+        support: { bg: "rgba(20,184,166,0.15)", color: "#5eead4" },
+        it: { bg: "rgba(99,102,241,0.15)", color: "#a5b4fc" },
+      };
+      const s = map[dept.toLowerCase()] || { bg: "rgba(255,255,255,0.05)", color: "#94a3b8" };
+      return <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: s.bg, color: s.color }}>{dept}</span>;
+    }
+
+    function SeniorityBadge({ level }) {
+      if (!level) return null;
+      const map = {
+        "C-Suite / Founder": { bg: "rgba(168,85,247,0.15)", color: "#c084fc", border: "rgba(168,85,247,0.3)" },
+        "VP-Level": { bg: "rgba(59,130,246,0.15)", color: "#93c5fd", border: "rgba(59,130,246,0.3)" },
+        "Director-Level": { bg: "rgba(20,184,166,0.15)", color: "#5eead4", border: "rgba(20,184,166,0.3)" },
+        "Executive": { bg: "rgba(168,85,247,0.15)", color: "#c084fc", border: "rgba(168,85,247,0.3)" },
+        "Senior": { bg: "rgba(249,115,22,0.15)", color: "#fb923c", border: "rgba(249,115,22,0.3)" },
+      };
+      const s = map[level] || map["Senior"];
+      return <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>{level}</span>;
+    }
+
+    const inputStyle = {
+      width: "100%", padding: "10px 14px",
+      background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)",
+      borderRadius: 10, color: "#e2e8f0", fontSize: 14, outline: "none",
+      boxSizing: "border-box", fontFamily: "'DM Sans', system-ui, sans-serif",
+    };
+
+    const labelStyle = { fontSize: 12, fontWeight: 600, color: "#94a3b8", display: "block", marginBottom: 6 };
+
+    function App() {
+      const apiKey = HUNTER_API_KEY;
+      const [tab, setTab] = useState("finder");
+      const [firstName, setFirstName] = useState("");
+      const [lastName, setLastName] = useState("");
+      const [domain, setDomain] = useState("");
+      const [seniorityFilter, setSeniorityFilter] = useState("");
+      const [deptFilter, setDeptFilter] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState("");
+      const [finderResult, setFinderResult] = useState(null);
+      const [domainResult, setDomainResult] = useState(null);
+      const [filterDM, setFilterDM] = useState(false);
+      const [accountInfo, setAccountInfo] = useState(null);
+      const [copied, setCopied] = useState("");
+
+      function copyText(text, id) {
+        navigator.clipboard.writeText(text);
+        setCopied(id);
+        setTimeout(() => setCopied(""), 1500);
+      }
+
+      async function fetchAccount() {
+        try {
+          const res = await fetch(`${HUNTER_BASE}/account?api_key=${apiKey}`);
+          const json = await res.json();
+          if (json.data) setAccountInfo(json.data);
+        } catch {}
+      }
+
+      async function handleEmailFind(e) {
+        e.preventDefault();
+        if (!apiKey || apiKey === "YOUR_API_KEY_HERE" || !domain || (!firstName && !lastName)) {
+          setError("Set your API key in the code, then enter domain + at least one name.");
+          return;
+        }
+        setLoading(true); setError(""); setFinderResult(null);
+        try {
+          const params = new URLSearchParams({ domain, api_key: apiKey });
+          if (firstName) params.set("first_name", firstName);
+          if (lastName) params.set("last_name", lastName);
+          const res = await fetch(`${HUNTER_BASE}/email-finder?${params}`);
+          const json = await res.json();
+          if (json.errors) { setError(json.errors.map(e => e.details).join(", ")); }
+          else { setFinderResult(json.data); fetchAccount(); }
+        } catch { setError("Network error. Check API key and try again."); }
+        setLoading(false);
+      }
+
+      async function handleDomainSearch(e) {
+        e.preventDefault();
+        if (!apiKey || apiKey === "YOUR_API_KEY_HERE" || !domain) {
+          setError("Set your API key in the code, then enter a domain.");
+          return;
+        }
+        setLoading(true); setError(""); setDomainResult(null);
+        try {
+          const params = new URLSearchParams({ domain, api_key: apiKey, limit: "100" });
+          if (seniorityFilter) params.set("seniority", seniorityFilter);
+          if (deptFilter) params.set("department", deptFilter);
+          const res = await fetch(`${HUNTER_BASE}/domain-search?${params}`);
+          const json = await res.json();
+          if (json.errors) { setError(json.errors.map(e => e.details).join(", ")); }
+          else { setDomainResult(json.data); fetchAccount(); }
+        } catch { setError("Network error. Check API key and try again."); }
+        setLoading(false);
+      }
+
+      const displayEmails = domainResult?.emails
+        ? filterDM ? domainResult.emails.filter(e => isDecisionMaker(e)) : domainResult.emails
+        : [];
+      const dmCount = domainResult?.emails ? domainResult.emails.filter(e => isDecisionMaker(e)).length : 0;
+
+      return (
+        <div>
+          {/* Header */}
+          <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "20px 24px" }}>
+            <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #f97316, #fb923c)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#fff" }}>H</div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 17, letterSpacing: "-0.3px" }}>Hunter Lookup</div>
+                  <div style={{ fontSize: 12, color: "#94a3b8" }}>API-powered email finder</div>
+                </div>
+              </div>
+              {accountInfo && (
+                <div style={{ fontSize: 12, color: "#94a3b8", background: "rgba(255,255,255,0.04)", padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)" }}>
+                  Requests: <span style={{ color: "#f97316", fontWeight: 600 }}>{accountInfo.requests?.searches?.used ?? "—"}</span> / {accountInfo.requests?.searches?.available ?? "—"}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ maxWidth: 960, margin: "0 auto", padding: "28px 24px" }}>
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 4 }}>
+              {[
+                { id: "finder", label: "Email Finder", desc: "Find specific person's email" },
+                { id: "domain", label: "Domain Search", desc: "All emails + decision makers" },
+              ].map(t => (
+                <button key={t.id} onClick={() => { setTab(t.id); setError(""); }}
+                  style={{ flex: 1, padding: "12px 16px", borderRadius: 10, cursor: "pointer", transition: "all 0.2s",
+                    background: tab === t.id ? "rgba(249,115,22,0.15)" : "transparent",
+                    border: tab === t.id ? "1px solid rgba(249,115,22,0.3)" : "1px solid transparent",
+                  }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: tab === t.id ? "#fb923c" : "#94a3b8" }}>{t.label}</div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{t.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            {/* Form */}
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "22px 20px", marginBottom: 20 }}>
+              <form onSubmit={tab === "finder" ? handleEmailFind : handleDomainSearch}>
+                <div style={{ display: "grid", gridTemplateColumns: tab === "finder" ? "1fr 1fr 1fr" : "1fr", gap: 14 }}>
+                  {tab === "finder" && (
+                    <>
+                      <div>
+                        <label style={labelStyle}>First Name</label>
+                        <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="e.g. Sundar" style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Last Name</label>
+                        <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="e.g. Pichai" style={inputStyle} />
+                      </div>
+                    </>
+                  )}
+                  <div>
+                    <label style={labelStyle}>Domain</label>
+                    <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="e.g. google.com" style={inputStyle} />
+                  </div>
+                </div>
+                {tab === "domain" && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 14 }}>
+                    <div>
+                      <label style={labelStyle}>Seniority (API filter)</label>
+                      <select value={seniorityFilter} onChange={e => setSeniorityFilter(e.target.value)} style={{...inputStyle, appearance: "auto"}}>
+                        <option value="">All levels</option>
+                        <option value="executive">Executive (C-suite, VP)</option>
+                        <option value="senior">Senior (Directors, Heads)</option>
+                        <option value="junior">Junior</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Department (API filter)</label>
+                      <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={{...inputStyle, appearance: "auto"}}>
+                        <option value="">All departments</option>
+                        <option value="executive">Executive</option>
+                        <option value="sales">Sales</option>
+                        <option value="marketing">Marketing</option>
+                        <option value="engineering">Engineering</option>
+                        <option value="finance">Finance</option>
+                        <option value="hr">HR</option>
+                        <option value="it">IT</option>
+                        <option value="support">Support</option>
+                        <option value="communication">Communication</option>
+                        <option value="legal">Legal</option>
+                        <option value="management">Management</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+                <button type="submit" disabled={loading}
+                  style={{ marginTop: 18, width: "100%", padding: "12px", background: loading ? "rgba(249,115,22,0.3)" : "linear-gradient(135deg, #f97316, #ea580c)", color: "#fff", fontWeight: 600, fontSize: 14, border: "none", borderRadius: 10, cursor: loading ? "wait" : "pointer" }}>
+                  {loading ? "Searching..." : tab === "finder" ? "Find Email" : "Search Domain"}
+                </button>
+              </form>
+            </div>
+
+            {/* Error */}
+            {error && (
+              <div style={{ padding: "12px 16px", borderRadius: 10, marginBottom: 20, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5", fontSize: 13 }}>
+                {error}
+              </div>
+            )}
+
+            {/* Email Finder Result */}
+            {tab === "finder" && finderResult && (
+              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "22px 20px" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#94a3b8", marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.5px" }}>Result</div>
+                {finderResult.email ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div style={{ padding: "16px 18px", borderRadius: 12, background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 16, fontWeight: 600, color: "#fb923c", fontFamily: "'JetBrains Mono', monospace" }}>{finderResult.email}</span>
+                        <ConfBadge confidence={finderResult.score} />
+                        <button onClick={() => copyText(finderResult.email, "finder")}
+                          style={{ marginLeft: "auto", padding: "4px 12px", fontSize: 12, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, color: "#94a3b8", cursor: "pointer" }}>
+                          {copied === "finder" ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                      {(finderResult.first_name || finderResult.last_name) && (
+                        <div style={{ marginTop: 8, fontSize: 13, color: "#94a3b8" }}>
+                          {finderResult.first_name} {finderResult.last_name}
+                          {finderResult.position && <span> · {finderResult.position}</span>}
+                        </div>
+                      )}
+                      {finderResult.linkedin_url && (
+                        <a href={finderResult.linkedin_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#60a5fa", marginTop: 6, display: "inline-block" }}>LinkedIn Profile →</a>
+                      )}
+                    </div>
+                    {finderResult.sources && finderResult.sources.length > 0 && (
+                      <div style={{ fontSize: 12, color: "#64748b" }}>Found in {finderResult.sources.length} source{finderResult.sources.length > 1 ? "s" : ""}</div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ color: "#94a3b8", fontSize: 14 }}>No email found for this person at this domain.</div>
+                )}
+              </div>
+            )}
+
+            {/* Domain Search Results */}
+            {tab === "domain" && domainResult && (
+              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "22px 20px" }}>
+                <div style={{ display: "flex", gap: 16, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
+                  <div style={{ fontSize: 13, color: "#94a3b8" }}>
+                    <span style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 20 }}>{domainResult.emails?.length || 0}</span> emails found
+                  </div>
+                  <div style={{ fontSize: 13, color: "#94a3b8" }}>
+                    <span style={{ fontWeight: 700, color: "#fb923c", fontSize: 20 }}>{dmCount}</span> decision makers
+                  </div>
+                  {domainResult.organization && (
+                    <div style={{ fontSize: 13, color: "#64748b", marginLeft: "auto" }}>{domainResult.organization}</div>
+                  )}
+                </div>
+
+                {dmCount > 0 && (
+                  <button onClick={() => setFilterDM(!filterDM)}
+                    style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, borderRadius: 8, cursor: "pointer", marginBottom: 16,
+                      background: filterDM ? "rgba(249,115,22,0.2)" : "rgba(255,255,255,0.06)",
+                      color: filterDM ? "#fb923c" : "#94a3b8",
+                      border: filterDM ? "1px solid rgba(249,115,22,0.3)" : "1px solid rgba(255,255,255,0.08)",
+                    }}>
+                    {filterDM ? "★ Showing Decision Makers Only" : "☆ Show Decision Makers Only"}
+                  </button>
+                )}
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {displayEmails.map((item, i) => {
+                    const dm = isDecisionMaker(item);
+                    const sLevel = dm ? seniorityLabel(item) : null;
+                    return (
+                      <div key={i} style={{ padding: "14px 16px", borderRadius: 10,
+                        background: dm ? "rgba(249,115,22,0.05)" : "rgba(0,0,0,0.2)",
+                        border: dm ? "1px solid rgba(249,115,22,0.15)" : "1px solid rgba(255,255,255,0.04)",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          {dm && <span style={{ fontSize: 14 }}>★</span>}
+                          <span style={{ fontWeight: 600, fontSize: 14, color: dm ? "#fb923c" : "#e2e8f0", fontFamily: "'JetBrains Mono', monospace" }}>{item.value}</span>
+                          <ConfBadge confidence={item.confidence} />
+                          <SourceBadge type={item.type} />
+                          {item.department && <DeptBadge dept={item.department} />}
+                          {dm && <SeniorityBadge level={sLevel} />}
+                          {item.seniority && <span style={{ fontSize: 10, color: "#64748b", fontStyle: "italic" }}>seniority: {item.seniority}</span>}
+                          <button onClick={() => copyText(item.value, `email-${i}`)}
+                            style={{ marginLeft: "auto", padding: "3px 10px", fontSize: 11, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 5, color: "#94a3b8", cursor: "pointer" }}>
+                            {copied === `email-${i}` ? "✓" : "Copy"}
+                          </button>
+                        </div>
+                        <div style={{ marginTop: 6, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                          {(item.first_name || item.last_name) && <span style={{ fontSize: 13, color: "#94a3b8" }}>{item.first_name} {item.last_name}</span>}
+                          {item.position && <span style={{ fontSize: 12, color: "#64748b" }}>{item.position}</span>}
+                          {item.linkedin && <a href={item.linkedin} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#60a5fa" }}>LinkedIn →</a>}
+                          {item.twitter && <a href={`https://twitter.com/${item.twitter}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#60a5fa" }}>Twitter →</a>}
+                          {item.phone_number && <span style={{ fontSize: 11, color: "#94a3b8" }}>📞 {item.phone_number}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {displayEmails.length === 0 && (
+                    <div style={{ color: "#64748b", fontSize: 14, padding: 16, textAlign: "center" }}>
+                      {filterDM ? "No decision makers found. Try showing all results." : "No emails found for this domain."}
+                    </div>
+                  )}
+                </div>
+
+                {displayEmails.length > 0 && (
+                  <button onClick={() => {
+                    const all = displayEmails.map(e => {
+                      const name = [e.first_name, e.last_name].filter(Boolean).join(" ");
+                      return `${e.value}${name ? ` (${name})` : ""}${e.position ? ` - ${e.position}` : ""}`;
+                    }).join("\n");
+                    copyText(all, "all");
+                  }}
+                    style={{ marginTop: 16, padding: "10px 20px", fontSize: 13, fontWeight: 600, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#e2e8f0", cursor: "pointer", width: "100%" }}>
+                    {copied === "all" ? "Copied!" : `Copy All (${displayEmails.length} emails)`}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* How it works */}
+            {!finderResult && !domainResult && (
+              <div style={{ marginTop: 12, padding: "24px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 14, color: "#64748b", fontSize: 13, lineHeight: 1.7 }}>
+                <div style={{ fontWeight: 600, color: "#94a3b8", marginBottom: 10, fontSize: 14 }}>How this works</div>
+                <div style={{ marginBottom: 6 }}><strong style={{ color: "#94a3b8" }}>Email Finder</strong> — Enter a person's name + company domain → get their verified email. Uses 1 request per lookup.</div>
+                <div style={{ marginBottom: 6 }}><strong style={{ color: "#94a3b8" }}>Domain Search</strong> — Enter a domain → get all discoverable emails + positions. Filter by seniority & department server-side, or toggle decision makers client-side. Returns up to 100 emails per search.</div>
+                <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(249,115,22,0.06)", borderRadius: 8, border: "1px solid rgba(249,115,22,0.1)", color: "#fb923c" }}>
+                  💡 API key is set in the code (line 5). Free tier: 25 searches/month. Starter ($34/mo): 500.
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
