@@ -21,7 +21,7 @@
     const { useState, useRef } = React;
 
     // ✏️ PASTE YOUR HUNTER.IO API KEY HERE
-    const HUNTER_API_KEY = "5f9ef97e50720dfa1446ac6e1818a4e9c7ab3e0d";
+    const HUNTER_API_KEY = "YOUR_API_KEY_HERE";
 
     const HUNTER_BASE = "https://api.hunter.io/v2";
 
@@ -42,18 +42,25 @@
     }
 
     function seniorityLabel(person) {
+      // Trust Hunter's seniority field first
       if (person.seniority === "executive") return "Executive";
       if (person.seniority === "senior") return "Senior";
-      if (person.position) {
+      // Only infer from title if no seniority field
+      if (!person.seniority && person.position) {
         const lower = person.position.toLowerCase();
-        if (["ceo","cto","cfo","coo","cmo","founder","co-founder","president","owner"].some(t => lower.includes(t)))
+        if (["ceo","cto","cfo","coo","cmo","chief","founder","co-founder","president","owner"].some(t => lower.includes(t)))
           return "C-Suite / Founder";
         if (["vp","vice president","svp","evp","avp"].some(t => lower.includes(t)))
           return "VP-Level";
-        if (["director","head"].some(t => lower.includes(t)))
-          return "Director-Level";
+        // Only match "director" or "head of" as distinct role words, not substrings
+        if (/\bdirector\b/i.test(person.position))
+          return "Director";
+        if (/\bhead of\b/i.test(person.position) || /\bhead,/i.test(person.position) || /^head\b/i.test(person.position))
+          return "Head";
+        if (["managing director","general manager","partner"].some(t => lower.includes(t)))
+          return "Leadership";
       }
-      return "Senior";
+      return null; // Don't label if we're not sure
     }
 
     function ConfBadge({ confidence }) {
@@ -95,11 +102,13 @@
       const map = {
         "C-Suite / Founder": { bg: "rgba(168,85,247,0.15)", color: "#c084fc", border: "rgba(168,85,247,0.3)" },
         "VP-Level": { bg: "rgba(59,130,246,0.15)", color: "#93c5fd", border: "rgba(59,130,246,0.3)" },
-        "Director-Level": { bg: "rgba(20,184,166,0.15)", color: "#5eead4", border: "rgba(20,184,166,0.3)" },
+        "Director": { bg: "rgba(20,184,166,0.15)", color: "#5eead4", border: "rgba(20,184,166,0.3)" },
+        "Head": { bg: "rgba(20,184,166,0.15)", color: "#5eead4", border: "rgba(20,184,166,0.3)" },
+        "Leadership": { bg: "rgba(234,179,8,0.15)", color: "#fde047", border: "rgba(234,179,8,0.3)" },
         "Executive": { bg: "rgba(168,85,247,0.15)", color: "#c084fc", border: "rgba(168,85,247,0.3)" },
         "Senior": { bg: "rgba(249,115,22,0.15)", color: "#fb923c", border: "rgba(249,115,22,0.3)" },
       };
-      const s = map[level] || map["Senior"];
+      const s = map[level] || { bg: "rgba(255,255,255,0.05)", color: "#94a3b8", border: "rgba(255,255,255,0.1)" };
       return <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>{level}</span>;
     }
 
